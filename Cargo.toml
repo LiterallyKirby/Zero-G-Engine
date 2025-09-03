@@ -1,0 +1,8 @@
+[package]
+name = "ZeroGPU"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rhai = "1.22.2"
+three-d = "0.18.2"
