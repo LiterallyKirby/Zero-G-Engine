@@ -36,29 +36,43 @@ impl ApplicationHandler for App {
         // Spawn a triangle
         spawn_entity(
             &mut world,
-            [0.0, 0.0, 0.0],
-            [1.0, 1.0, 1.0],
-            [1.0, 0.0, 0.0, 1.0],
-            MeshType::Triangle,
+            "Triangle1",          // name
+            [0.0, 0.0, 0.0],      // position
+            [1.0, 1.0, 1.0],      // scale
+            MeshType::Triangle,   // mesh
+            [1.0, 0.0, 0.0, 1.0], // color
         );
 
         // Spawn a cube
         spawn_entity(
             &mut world,
+            "Cube1",
             [1.0, 0.0, 0.0],
             [1.0, 1.0, 1.0],
-            [0.0, 1.0, 0.0, 1.0],
             MeshType::Cube,
+            [0.0, 1.0, 0.0, 1.0],
         );
 
         // Spawn a custom mesh with GPU ID 42
         spawn_entity(
             &mut world,
+            "CustomMesh1",
             [2.0, 0.0, 0.0],
             [0.5, 0.5, 0.5],
-            [0.0, 0.0, 1.0, 1.0],
             MeshType::Custom(42),
+            [0.0, 0.0, 1.0, 1.0],
         );
+        let cam_id = spawn_camera(
+            &mut world,
+            "MainCamera",
+            [0.0, 0.0, -5.0], // position
+            [0.0, 0.0, 0.0], // rotation
+            45.0,            // fov
+            0.1,             // near
+            100.0,           // far
+        );
+
+        set_active_camera(&mut world, cam_id);
 
         // Now store the world
         self.world = Some(world);

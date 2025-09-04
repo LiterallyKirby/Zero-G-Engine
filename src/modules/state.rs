@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use winit::window::Window;
 use std::collections::HashMap;
+use std::sync::Arc;
 use wgpu::util::DeviceExt;
+use winit::window::Window;
 pub struct Mesh {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: Option<wgpu::Buffer>,
@@ -38,22 +38,24 @@ impl State {
         let surface_format = cap.formats[0];
 
         // Create uniform bind group layout for ECS entities
-        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("entity_uniform_bind_group_layout"),
-        });
+        let uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("entity_uniform_bind_group_layout"),
+            });
 
         // Create pipeline for ECS entities
-        let entity_pipeline = Self::create_entity_pipeline(&device, surface_format, &uniform_bind_group_layout);
+        let entity_pipeline =
+            Self::create_entity_pipeline(&device, surface_format, &uniform_bind_group_layout);
 
         let mut state = State {
             window,
@@ -66,7 +68,7 @@ impl State {
             uniform_bind_group_layout,
             meshes: HashMap::new(),
         };
-        
+
         state.configure_surface();
         state.load_default_meshes();
         state
@@ -75,89 +77,94 @@ impl State {
     pub fn load_default_meshes(&mut self) {
         // Triangle vertices
         let triangle_vertices: &[f32] = &[
-            0.0, 0.5, 0.0,   // top
+            0.0, 0.5, 0.0, // top
             -0.5, -0.5, 0.0, // left
-            0.5, -0.5, 0.0,  // right
+            0.5, -0.5, 0.0, // right
         ];
-        let triangle_vertex_buffer = self.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Triangle VB"),
-                contents: bytemuck::cast_slice(triangle_vertices),
-                usage: wgpu::BufferUsages::VERTEX,
+        let triangle_vertex_buffer =
+            self.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Triangle VB"),
+                    contents: bytemuck::cast_slice(triangle_vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+        self.meshes.insert(
+            0,
+            Mesh {
+                vertex_buffer: triangle_vertex_buffer,
+                index_buffer: None,
+                vertex_count: 3,
+                index_count: None,
             },
         );
-        self.meshes.insert(0, Mesh {
-            vertex_buffer: triangle_vertex_buffer,
-            index_buffer: None,
-            vertex_count: 3,
-            index_count: None,
-        });
 
         // Cube vertices
         let cube_vertices: &[f32] = &[
             // Front face
-            -0.5, -0.5,  0.5,  // 0
-             0.5, -0.5,  0.5,  // 1
-             0.5,  0.5,  0.5,  // 2
-            -0.5,  0.5,  0.5,  // 3
+            -0.5, -0.5, 0.5, // 0
+            0.5, -0.5, 0.5, // 1
+            0.5, 0.5, 0.5, // 2
+            -0.5, 0.5, 0.5, // 3
             // Back face
-            -0.5, -0.5, -0.5,  // 4
-             0.5, -0.5, -0.5,  // 5
-             0.5,  0.5, -0.5,  // 6
-            -0.5,  0.5, -0.5,  // 7
+            -0.5, -0.5, -0.5, // 4
+            0.5, -0.5, -0.5, // 5
+            0.5, 0.5, -0.5, // 6
+            -0.5, 0.5, -0.5, // 7
         ];
-        
+
         let cube_indices: &[u16] = &[
             // Front face
-            0, 1, 2,  2, 3, 0,
-            // Back face
-            4, 6, 5,  6, 4, 7,
-            // Left face
-            4, 0, 3,  3, 7, 4,
-            // Right face
-            1, 5, 6,  6, 2, 1,
-            // Top face
-            3, 2, 6,  6, 7, 3,
-            // Bottom face
-            4, 5, 1,  1, 0, 4,
+            0, 1, 2, 2, 3, 0, // Back face
+            4, 6, 5, 6, 4, 7, // Left face
+            4, 0, 3, 3, 7, 4, // Right face
+            1, 5, 6, 6, 2, 1, // Top face
+            3, 2, 6, 6, 7, 3, // Bottom face
+            4, 5, 1, 1, 0, 4,
         ];
-        
-        let cube_vertex_buffer = self.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Cube VB"),
-                contents: bytemuck::cast_slice(cube_vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            },
-        );
-        
-        let cube_index_buffer = self.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
+
+        let cube_vertex_buffer =
+            self.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Cube VB"),
+                    contents: bytemuck::cast_slice(cube_vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+
+        let cube_index_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Cube IB"),
                 contents: bytemuck::cast_slice(cube_indices),
                 usage: wgpu::BufferUsages::INDEX,
+            });
+
+        self.meshes.insert(
+            1,
+            Mesh {
+                vertex_buffer: cube_vertex_buffer,
+                index_buffer: Some(cube_index_buffer),
+                vertex_count: 8,
+                index_count: Some(cube_indices.len() as u32),
             },
         );
-        
-        self.meshes.insert(1, Mesh {
-            vertex_buffer: cube_vertex_buffer,
-            index_buffer: Some(cube_index_buffer),
-            vertex_count: 8,
-            index_count: Some(cube_indices.len() as u32),
-        });
     }
 
     fn create_entity_pipeline(
-        device: &wgpu::Device, 
+        device: &wgpu::Device,
         format: wgpu::TextureFormat,
         uniform_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ECS Entity Shader"),
-            source: wgpu::ShaderSource::Wgsl(r#"
-                struct Uniforms {
-                    transform: mat4x4<f32>,
-                    color: vec4<f32>,
-                }
+            source: wgpu::ShaderSource::Wgsl(
+                r#"
+                
+struct Uniforms {
+    view_proj: mat4x4<f32>,
+    transform: mat4x4<f32>,
+    color: vec4<f32>,
+}
+
                 @group(0) @binding(0)
                 var<uniform> uniforms: Uniforms;
 
@@ -168,23 +175,28 @@ impl State {
                 @vertex
                 fn vs_main(vertex: VertexInput) -> @builtin(position) vec4<f32> {
                     let world_pos = vec4<f32>(vertex.position, 1.0);
-                    return uniforms.transform * world_pos;
+                    
+return uniforms.view_proj * uniforms.transform * world_pos;
                 }
 
                 @fragment
                 fn fs_main() -> @location(0) vec4<f32> {
                     return uniforms.color;
                 }
-            "#.into()),
+            "#
+                .into(),
+            ),
         });
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("ECS Entity Pipeline"),
-            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("ECS Entity Pipeline Layout"),
-                bind_group_layouts: &[uniform_bind_group_layout],
-                push_constant_ranges: &[],
-            })),
+            layout: Some(
+                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("ECS Entity Pipeline Layout"),
+                    bind_group_layouts: &[uniform_bind_group_layout],
+                    push_constant_ranges: &[],
+                }),
+            ),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
@@ -245,16 +257,16 @@ impl State {
             .surface
             .get_current_texture()
             .expect("failed to acquire next swapchain texture");
-        
+
         let texture_view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor {
                 format: Some(self.surface_format.add_srgb_suffix()),
                 ..Default::default()
             });
-        
+
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("ECS Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -270,54 +282,66 @@ impl State {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
-        
+
         render_pass.set_pipeline(&self.entity_pipeline);
-        
+
+        let aspect = self.size.width as f32 / self.size.height as f32;
+
+        let view_proj = if let Some(mat) = world.active_camera_matrix(aspect) {
+            mat.to_cols_array_2d()
+        } else {
+            glam::Mat4::IDENTITY.to_cols_array_2d()
+        };
+
         // Only render ECS entities - nothing else
         for entity in &world.entities {
             if let (Some(mesh_handle), Some(material), Some(transform)) =
                 (&entity.mesh_handle, &entity.material, &entity.transform)
             {
                 if let Some(mesh) = self.meshes.get(&mesh_handle.0) {
-                    self.render_entity(&mut render_pass, mesh, transform, material);
+                    self.render_entity(&mut render_pass, mesh, transform, material, view_proj);
                 }
             }
         }
-        
+
         drop(render_pass);
         self.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
         surface_texture.present();
     }
-    
+
     fn render_entity(
         &self,
         render_pass: &mut wgpu::RenderPass,
         mesh: &Mesh,
         transform: &crate::modules::ecs::components::Transform,
         material: &crate::modules::ecs::components::Material,
+        view_proj: [[f32; 4]; 4],
     ) {
         // Create transform matrix from ECS transform component
         let transform_matrix = self.create_transform_matrix(transform);
-        
+
         // Create uniforms with transform and material data
+        //
+
         let uniforms = EntityUniformData {
+            view_proj,
             transform: transform_matrix,
             color: material.color,
         };
-        
+
         let uniform_array = [uniforms];
         let uniform_data = bytemuck::cast_slice(&uniform_array);
-        
+
         let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Entity Uniform Buffer"),
             size: uniform_data.len() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        
+
         self.queue.write_buffer(&uniform_buffer, 0, uniform_data);
-        
+
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.uniform_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
@@ -326,10 +350,10 @@ impl State {
             }],
             label: Some("entity_uniform_bind_group"),
         });
-        
+
         render_pass.set_bind_group(0, &bind_group, &[]);
         render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-        
+
         // Draw based on whether mesh has indices or not
         if let Some(index_buffer) = &mesh.index_buffer {
             if let Some(index_count) = mesh.index_count {
@@ -340,8 +364,11 @@ impl State {
             render_pass.draw(0..mesh.vertex_count, 0..1);
         }
     }
-    
-    fn create_transform_matrix(&self, transform: &crate::modules::ecs::components::Transform) -> [[f32; 4]; 4] {
+
+    fn create_transform_matrix(
+        &self,
+        transform: &crate::modules::ecs::components::Transform,
+    ) -> [[f32; 4]; 4] {
         // Create scale matrix
         let scale = [
             [transform.scale[0], 0.0, 0.0, 0.0],
@@ -349,15 +376,20 @@ impl State {
             [0.0, 0.0, transform.scale[2], 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ];
-        
+
         // Create translation matrix
         let translation = [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [transform.position[0], transform.position[1], transform.position[2], 1.0],
+            [
+                transform.position[0],
+                transform.position[1],
+                transform.position[2],
+                1.0,
+            ],
         ];
-        
+
         // For now, just combine scale and translation (rotation can be added later)
         // This is a simplified matrix multiplication: translation * scale
         [
@@ -372,6 +404,7 @@ impl State {
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct EntityUniformData {
+    view_proj: [[f32; 4]; 4],
     transform: [[f32; 4]; 4],
     color: [f32; 4],
 }
