@@ -1,12 +1,10 @@
 use crate::modules::ecs::components::*;
+use crate::modules::ecs::scripts::*;
 use crate::modules::ecs::world::*;
-
+use glam::*;
 // ============================================================================
 // CORE TYPES AND STRUCTS
 // ============================================================================
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct EntityId(pub u64);
 
 pub struct Camera {
     pub fov: f32,        // Field of view in degrees
@@ -16,13 +14,29 @@ pub struct Camera {
 }
 
 pub struct Entity {
-    pub id: EntityId,
     pub name: String,
     pub transform: Option<Transform>,
     pub mesh_handle: Option<MeshHandle>,
     pub material: Option<Material>,
-    pub camera: Option<Camera>, // new optional component
+    pub camera: Option<Camera>,
+    pub scripts: Option<Vec<Script>>, // Changed from `script` to `scripts`
+    pub children: Option<Vec<EntityId>>,
+    pub parent: Option<EntityId>,
     pub tags: Vec<String>,
+}
+
+pub struct EntityBuilder {
+    world_ref: *mut World, // Store a raw pointer to avoid lifetime issues
+    entity_id: Option<EntityId>,
+    name: String,
+    transform: Option<Transform>,
+    mesh_handle: Option<MeshHandle>,
+    material: Option<Material>,
+    camera: Option<Camera>,
+    scripts: Option<Vec<Script>>,
+    children: Option<Vec<EntityId>>,
+    parent: Option<EntityId>,
+    tags: Vec<String>,
 }
 
 pub enum MeshType {
@@ -35,17 +49,188 @@ pub enum MeshType {
 // ENTITY IMPLEMENTATION
 // ============================================================================
 
-impl Entity {
-    pub fn new(id: EntityId, name: impl Into<String>) -> Self {
+impl EntityBuilder {
+    /// Create a new EntityBuilder with all the basic components
+
+    pub fn new(
+        world: &mut World,
+        name: impl Into<String>,
+        position: Vec3,
+        scale: Vec3,
+        mesh: MeshType,
+        color: Vec4,
+        script_path: Option<impl Into<String>>,
+    ) -> Self {
+        let name_string = name.into();
+        let entity_id = world.create_entity(&name_string);
+
+        let scripts = script_path.map(|s| vec![Script::new(s.into())]);
+
         Self {
-            id,
+            world_ref: world as *mut World,
+            entity_id: Some(entity_id),
+            name: name_string,
+            transform: Some(Transform {
+                position,
+                rotation: Vec3::ZERO,
+                scale,
+            }),
+            mesh_handle: Some(MeshHandle(match mesh {
+                MeshType::Triangle => 0,
+                MeshType::Cube => 1,
+                MeshType::Custom(id) => id,
+            })),
+            material: Some(Material { color }),
+            camera: None,
+            scripts, // could be None
+            children: None,
+            parent: None,
+            tags: vec![],
+        }
+    }
+
+    /// Add additional scripts to the entity
+    pub fn with_script(mut self, script_path: impl Into<String>) -> Self {
+        let script = Script::new(script_path.into());
+        match &mut self.scripts {
+            Some(scripts) => scripts.push(script),
+            None => self.scripts = Some(vec![script]),
+        }
+        self
+    }
+
+    /// Add multiple scripts at once
+    pub fn with_scripts(mut self, script_paths: Vec<String>) -> Self {
+        let scripts: Vec<Script> = script_paths.into_iter().map(Script::new).collect();
+        match &mut self.scripts {
+            Some(existing) => existing.extend(scripts),
+            None => self.scripts = Some(scripts),
+        }
+        self
+    }
+
+    /// Add a camera component
+    pub fn with_camera(mut self, fov: f32, near: f32, far: f32) -> Self {
+        self.camera = Some(Camera {
+            fov,
+            near,
+            far,
+            is_active: false, // Set to false by default, use set_active_camera later
+        });
+        self
+    }
+
+    /// Add tags to the entity
+    pub fn with_tags(mut self, tags: Vec<String>) -> Self {
+        self.tags.extend(tags);
+        self
+    }
+
+    /// Add a single tag
+    pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
+        self.tags.push(tag.into());
+        self
+    }
+
+    /// Build the entity and insert it into the world
+    pub fn build(self) -> EntityId {
+        let entity_id = self
+            .entity_id
+            .expect("EntityBuilder should have an entity_id");
+
+        // Safety: We know the world pointer is valid because we got it from a mutable reference
+        let world = unsafe { &mut *self.world_ref };
+
+        if let Some(entity) = world.get_entity_mut(entity_id) {
+            // Update the entity with all the builder data
+            entity.name = self.name;
+            entity.transform = self.transform;
+            entity.mesh_handle = self.mesh_handle;
+            entity.material = self.material;
+            entity.camera = self.camera;
+            entity.scripts = self.scripts;
+            entity.children = self.children;
+            entity.parent = self.parent;
+            entity.tags = self.tags;
+        }
+
+        entity_id
+    }
+}
+
+impl Entity {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            transform: None,
+            mesh_handle: None,
+            material: None,
+            children: None,
+            parent: None,
+            camera: None,
+            scripts: None,
+            tags: Vec::new(),
+        }
+    }
+
+    /// Create a basic EntityBuilder (without world integration)
+    pub fn builder(name: impl Into<String>) -> EntityBuilder {
+        EntityBuilder {
+            world_ref: std::ptr::null_mut(),
+            entity_id: None,
             name: name.into(),
             transform: None,
             mesh_handle: None,
             material: None,
             camera: None,
-            tags: Vec::new(),
+            scripts: None,
+            children: None,
+            parent: None,
+            tags: vec![],
         }
+    }
+
+    /// Create an EntityBuilder that integrates with the world (this is what you want)
+
+    pub fn builder_with_world(
+        world: &mut World,
+        name: impl Into<String>,
+        position: Vec3,
+        scale: Vec3,
+        mesh: MeshType,
+        color: Vec4,
+        script_path: Option<impl Into<String>>,
+    ) -> EntityBuilder {
+        let name_string = name.into();
+        let entity_id = world.create_entity(&name_string);
+
+        let mut builder = EntityBuilder {
+            world_ref: world as *mut World,
+            entity_id: Some(entity_id),
+            name: name_string,
+            transform: Some(Transform {
+                position,
+                rotation: Vec3::ZERO,
+                scale,
+            }),
+            mesh_handle: Some(MeshHandle(match mesh {
+                MeshType::Triangle => 0,
+                MeshType::Cube => 1,
+                MeshType::Custom(id) => id,
+            })),
+            material: Some(Material { color }),
+            camera: None,
+            scripts: None,
+            children: None,
+            parent: None,
+            tags: vec![],
+        };
+
+        if let Some(path) = script_path {
+            builder.scripts = Some(vec![Script::new(path.into())]);
+        }
+
+        builder
     }
 
     pub fn set_name(&mut self, name: impl Into<String>) {
@@ -54,6 +239,14 @@ impl Entity {
 
     pub fn add_camera(&mut self, camera: Camera) {
         self.camera = Some(camera);
+    }
+
+    pub fn add_parent(&mut self, parent: EntityId) {
+        self.parent = Some(parent);
+    }
+
+    pub fn add_children(&mut self, child: EntityId) {
+        self.children.get_or_insert_with(Vec::new).push(child);
     }
 
     pub fn add_transform(&mut self, t: Transform) {
@@ -67,6 +260,16 @@ impl Entity {
     pub fn add_material(&mut self, mat: Material) {
         self.material = Some(mat);
     }
+
+    pub fn has_tag(&self, tag: &str) -> bool {
+        self.tags.contains(&tag.to_string())
+    }
+
+    pub fn remove_tag(&mut self, tag: &str) {
+        self.tags.retain(|t| t != tag);
+    }
+
+    // Script management methods (from your sc
 }
 
 // ============================================================================
@@ -76,82 +279,115 @@ impl Entity {
 pub fn spawn_entity(
     world: &mut World,
     name: impl Into<String>,
-    position: [f32; 3],
-    scale: [f32; 3],
+    position: glam::Vec3,
+    scale: glam::Vec3,
     mesh: MeshType,
-    color: [f32; 4],
+    color: glam::Vec4,
 ) -> EntityId {
     // Create entity through World to get unique ID
-    let entity = world.create_entity(name);
+    let entity_id = world.create_entity(name);
 
     // Add transform
-    entity.add_transform(Transform {
-        position,
-        rotation: [0.0, 0.0, 0.0],
-        scale,
-    });
+    if let Some(entity) = world.get_entity_mut(entity_id) {
+        entity.add_transform(Transform {
+            position,
+            rotation: glam::Vec3 {
+                x: (0.0),
+                y: (0.0),
+                z: (0.0),
+            },
+            scale,
+        });
 
-    // Pick mesh ID from enum
-    let mesh_id = match mesh {
-        MeshType::Triangle => 0,
-        MeshType::Cube => 1,
-        MeshType::Custom(id) => id,
-    };
-    entity.add_mesh_handle(MeshHandle(mesh_id));
+        // Pick mesh ID from enum
+        let mesh_id = match mesh {
+            MeshType::Triangle => 0,
+            MeshType::Cube => 1,
+            MeshType::Custom(id) => id,
+        };
+        entity.add_mesh_handle(MeshHandle(mesh_id));
 
-    // Add material
-    entity.add_material(Material { color });
+        // Add material
+        entity.add_material(Material { color });
+    }
 
-    // Return the entity's ID
-    entity.id
+    entity_id
 }
 
-pub fn spawn_triangle(world: &mut World, name: impl Into<String>) -> EntityId {
-    // Create a new entity through the World (assigns unique ID)
-    let entity = world.create_entity(name); // returns &mut Entity
+// Spawning functions for scripted entities
+pub fn spawn_scripted_entity(
+    world: &mut World,
+    name: impl Into<String>,
+    position: glam::Vec3,
+    scale: glam::Vec3,
+    mesh: MeshType,
+    color: glam::Vec4,
+    script_paths: Vec<String>,
+) -> EntityId {
+    let entity_id = spawn_entity(world, name, position, scale, mesh, color);
 
-    // Add components
-    entity.add_transform(Transform {
-        position: [0.0, 0.0, 0.0],
-        rotation: [0.0, 0.0, 0.0],
-        scale: [1.0, 1.0, 1.0],
-    });
-    entity.add_mesh_handle(MeshHandle(0)); // triangle mesh
-    entity.add_material(Material {
-        color: [1.0, 0.0, 0.0, 1.0],
-    });
+    if let Some(entity) = world.get_entity_mut(entity_id) {
+        let scripts: Vec<Script> = script_paths
+            .into_iter()
+            .map(|path| Script::new(path))
+            .collect();
+        entity.add_scripts(scripts);
+    }
 
-    // Return a copy of the entity's ID
-    entity.id.clone()
+    entity_id
+}
+
+pub fn spawn_single_script_entity(
+    world: &mut World,
+    name: impl Into<String>,
+    position: glam::Vec3,
+    scale: glam::Vec3,
+    mesh: MeshType,
+    color: glam::Vec4,
+    script_path: impl Into<String>,
+) -> EntityId {
+    spawn_scripted_entity(
+        world,
+        name,
+        position,
+        scale,
+        mesh,
+        color,
+        vec![script_path.into()],
+    )
 }
 
 pub fn spawn_camera(
     world: &mut World,
     name: impl Into<String>,
-    position: [f32; 3],
-    rotation: [f32; 3],
+    position: glam::Vec3,
+    rotation: glam::Vec3,
     fov_y: f32,
     near: f32,
     far: f32,
 ) -> EntityId {
-    let entity = world.create_entity(name);
+    let entity_id = world.create_entity(name);
 
-    entity.add_transform(Transform {
-        position,
-        rotation,
-        scale: [1.0, 1.0, 1.0],
-    });
+    if let Some(entity) = world.get_entity_mut(entity_id) {
+        entity.add_transform(Transform {
+            position,
+            rotation,
+            scale: glam::Vec3 {
+                x: (0.0),
+                y: (0.0),
+                z: (0.0),
+            },
+        });
 
-   
-entity.add_camera(Camera {
-    fov: fov_y,  // <-- match struct field name
-    near,
-    far,
-    is_active: true, // maybe default the first one to active
-});
+        entity.add_camera(Camera {
+            fov: fov_y, // <-- match struct field name
+            near,
+            far,
+            is_active: true, // maybe default the first one to active
+        });
+    }
 
-
-    entity.id
+    entity_id
 }
 
 // ============================================================================
@@ -159,30 +395,40 @@ entity.add_camera(Camera {
 // ============================================================================
 
 pub fn set_active_camera(world: &mut World, id: EntityId) {
-    for entity in &mut world.entities {
+    for (entity_id, entity) in world.iter_entities_mut() {
         if let Some(cam) = &mut entity.camera {
-            cam.is_active = entity.id == id;
+            cam.is_active = entity_id == id;
         }
     }
 }
 
 pub fn camera_view_proj(camera: &Camera, transform: &Transform, aspect_ratio: f32) -> glam::Mat4 {
-    // View
-    let eye = glam::Vec3::from_array(transform.position);
-    let forward = rotation_to_forward(transform.rotation); // you'd write this helper
+    // Convert position and rotation to glam types
+    let eye = transform.position; // assuming you've changed position to glam::Vec3
+    let rotation = glam::Quat::from_euler(
+        glam::EulerRot::XYZ,
+        transform.rotation.x,
+        transform.rotation.y,
+        transform.rotation.z,
+    );
+
+    // Forward direction
+    let forward = rotation * -glam::Vec3::Z; // -Z is forward in right-handed system
     let target = eye + forward;
-    let up = glam::Vec3::Y; // [0, 1, 0]
+    let up = rotation * glam::Vec3::Y; // Rotate up vector by the same rotation
+
+    // View matrix
     let view = glam::Mat4::look_at_rh(eye, target, up);
 
-    // Projection
-    let projection = glam::Mat4::perspective_rh_gl(
-        camera.fov.to_radians(),
+    // Projection matrix (perspective)
+    let proj = glam::Mat4::perspective_rh_gl(
+        camera.fov.to_radians(), // vertical FOV
         aspect_ratio,
         camera.near,
         camera.far,
     );
 
-    projection * view
+    proj * view
 }
 
 // ============================================================================

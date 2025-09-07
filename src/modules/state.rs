@@ -21,6 +21,15 @@ struct EntityUniformData {
     color: [f32; 4],
 }
 
+impl EntityUniformData {
+    pub fn new(view_proj: glam::Mat4, transform: glam::Mat4, color: glam::Vec4) -> Self {
+        Self {
+            view_proj: view_proj.to_cols_array_2d(),
+            transform: transform.to_cols_array_2d(),
+            color: color.to_array(),
+        }
+    }
+}
 unsafe impl bytemuck::Pod for EntityUniformData {}
 unsafe impl bytemuck::Zeroable for EntityUniformData {}
 
@@ -352,23 +361,10 @@ impl State {
         let aspect = self.size.width as f32 / self.size.height as f32;
         let view_proj = world
             .active_camera_matrix(aspect)
-            .unwrap_or(glam::Mat4::IDENTITY)
-            .to_cols_array_2d();
+            .unwrap_or(glam::Mat4::IDENTITY);
 
         // Collect renderable entities with mesh IDs and copy their data
-        let renderable_entities: Vec<_> = world
-            .entities
-            .iter()
-            .filter_map(|entity| {
-                if let (Some(mesh_handle), Some(material), Some(transform)) =
-                    (&entity.mesh_handle, &entity.material, &entity.transform)
-                {
-                    Some((mesh_handle.0, *transform, *material))
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let renderable_entities: Vec<_> = world.get_renderable_entities();
 
         if renderable_entities.is_empty() {
             // Early exit if nothing to render
@@ -399,11 +395,10 @@ impl State {
             // Render all entities - look up meshes during rendering to avoid borrowing conflicts
             for (mesh_id, transform, material) in &renderable_entities {
                 if let Some(mesh) = self.meshes.get(mesh_id) {
-                    State::render_entity_in_pass(
+                    Self::render_entity_in_pass(
                         &self.queue,
                         &self.device,
                         &self.uniform_buffer,
-                        self.uniform_buffer_size,
                         &self.uniform_bind_group_layout,
                         &mut render_pass,
                         mesh,
@@ -425,23 +420,31 @@ impl State {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
         uniform_buffer: &wgpu::Buffer,
-        uniform_buffer_size: u64,
         uniform_bind_group_layout: &wgpu::BindGroupLayout,
         render_pass: &mut wgpu::RenderPass,
         mesh: &Mesh,
         transform: &crate::modules::ecs::components::Transform,
         material: &crate::modules::ecs::components::Material,
-        view_proj: [[f32; 4]; 4],
+        view_proj: glam::Mat4,
     ) {
-        let transform_matrix = Self::create_transform_matrix_optimized(transform);
-        let uniforms = EntityUniformData {
-            view_proj,
-            transform: transform_matrix,
-            color: material.color,
+        // Create transform matrix using glam
+        let transform_matrix = glam::Mat4::from_scale_rotation_translation(
+            transform.scale,
+            glam::Quat::IDENTITY, // or calculate from rotation if you implement it
+            transform.position,
+        );
+
+        // Pack into uniform struct
+        let uniform = EntityUniformData {
+            view_proj: view_proj.to_cols_array_2d(),
+            transform: transform_matrix.to_cols_array_2d(),
+            color: material.color.into(),
         };
 
-        queue.write_buffer(uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
+        // Write to GPU
+        queue.write_buffer(uniform_buffer, 0, bytemuck::cast_slice(&[uniform]));
 
+        // Create bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: uniform_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
@@ -454,31 +457,11 @@ impl State {
         render_pass.set_bind_group(0, &bind_group, &[]);
         render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
 
-        match (&mesh.index_buffer, mesh.index_count) {
-            (Some(index_buffer), Some(index_count)) => {
-                render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                render_pass.draw_indexed(0..index_count, 0, 0..1);
-            }
-            _ => {
-                render_pass.draw(0..mesh.vertex_count, 0..1);
-            }
+        if let (Some(index_buffer), Some(index_count)) = (&mesh.index_buffer, mesh.index_count) {
+            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..index_count, 0, 0..1);
+        } else {
+            render_pass.draw(0..mesh.vertex_count, 0..1);
         }
-    }
-
-    // Optimized matrix creation using glam for better performance
-    fn create_transform_matrix_optimized(
-        transform: &crate::modules::ecs::components::Transform,
-    ) -> [[f32; 4]; 4] {
-        let translation = glam::Vec3::from_array(transform.position);
-        let scale = glam::Vec3::from_array(transform.scale);
-
-        // For now, just translation and scale (rotation can be added later)
-        let transform_matrix = glam::Mat4::from_scale_rotation_translation(
-            scale,
-            glam::Quat::IDENTITY, // No rotation for now
-            translation,
-        );
-
-        transform_matrix.to_cols_array_2d()
     }
 }

@@ -1,0 +1,30 @@
+{
+  "targets": {
+    "debug": {
+      "outDir": "wasm",
+      "textFile": true,
+      "importMemory": false,
+      "exportStart": false,
+      "exportRuntime": false,
+      "runtime": "stub"
+    },
+    "release": {
+      "outDir": "wasm", 
+      "textFile": false,
+      "optimizeLevel": 3,
+      "shrinkLevel": 2,
+      "importMemory": false,
+      "exportStart": false,
+      "exportRuntime": false,
+      "runtime": "stub"
+    }
+  },
+  "options": {
+    "exportRuntime": false,
+    "importMemory": false,
+    "runtime": "stub"
+  },
+  "entries": [
+    "assembly/mover.ts"
+  ]
+}
