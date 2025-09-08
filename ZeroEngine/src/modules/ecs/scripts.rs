@@ -10,7 +10,7 @@ pub type ScriptId = u32;
 // ============================================================================
 // SCRIPT TAG REGISTRY
 // ============================================================================
-
+#[derive(Clone)]
 pub struct ScriptTagRegistry {
     name_to_id: HashMap<String, u32>,
     next_id: u32,
@@ -55,7 +55,7 @@ impl Script {
         }
     }
 }
-
+#[derive(Clone)]
 pub struct ScriptRegistry {
     tags: ScriptTagRegistry,
     paths: HashMap<ScriptId, String>,

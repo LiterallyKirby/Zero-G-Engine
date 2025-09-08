@@ -3,9 +3,31 @@
 version = 4
 
 [[package]]
-name = "ZeroGPU"
+name = "ZeroEngine"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "bytemuck",
+ "egui",
+ "egui-wgpu",
+ "egui-winit",
+ "env_logger",
+ "glam",
+ "pollster",
+ "serde",
+ "serde_json",
+ "slotmap",
+ "wasm-bindgen",
+ "wasmtime",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "ZeroRuntime"
+version = "0.1.0"
+dependencies = [
+ "ZeroEngine",
  "anyhow",
  "bytemuck",
  "egui",

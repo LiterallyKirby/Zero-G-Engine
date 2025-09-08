@@ -46,6 +46,7 @@ pub fn update_and_render(
 
     // 3. Render the current world state
     state.render(world);
+state.get_window().request_redraw();
 
     Ok(())
 }
