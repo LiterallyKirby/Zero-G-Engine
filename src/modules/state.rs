@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-
+use wgpu::util::DeviceExt;
 // Instead of: use wgpu;
-use egui_wgpu::wgpu;
+
 use winit::window::Window;
-use crate::modules::egui_renderer::*;
-use egui_wgpu::wgpu::util::DeviceExt;
+
 // ============================================================================
 // CORE DATA STRUCTURES
 // ============================================================================
@@ -43,9 +42,9 @@ pub struct State {
     window: Arc<Window>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    pub size: winit::dpi::PhysicalSize<u32>,  // Make this public
+    pub size: winit::dpi::PhysicalSize<u32>, // Make this public
     pub surface: wgpu::Surface<'static>,
-    pub surface_format: wgpu::TextureFormat,  // Make this public
+    pub surface_format: wgpu::TextureFormat, // Make this public
     pub entity_pipeline: wgpu::RenderPipeline,
     pub uniform_bind_group_layout: wgpu::BindGroupLayout,
     pub meshes: HashMap<u32, Mesh>,
@@ -54,9 +53,6 @@ pub struct State {
     uniform_buffer: wgpu::Buffer,
     uniform_buffer_size: u64,
     staging_belt: wgpu::util::StagingBelt,
-    pub egui_ctx: egui::Context,
-    pub egui_winit: egui_winit::State,  // Make this public
-    pub egui_renderer: EguiRenderer,  // Make this public
 }
 
 // ============================================================================
@@ -65,8 +61,8 @@ pub struct State {
 impl State {
     pub async fn new(window: Arc<Window>) -> State {
         // GPU setup - Fixed: Remove reference
-       
-let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions::default())
             .await
@@ -74,8 +70,7 @@ let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
 
         // Fixed: Add None parameter for request_device
         let (device, queue) = adapter
-            
-.request_device(&wgpu::DeviceDescriptor::default())
+            .request_device(&wgpu::DeviceDescriptor::default())
             .await
             .unwrap();
 
@@ -114,35 +109,7 @@ let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
             mapped_at_creation: false,
         });
 
-        let egui_ctx = egui::Context::default();
-
-        // Fixed: Add missing 6th parameter for egui_winit::State::new
-        let egui_winit = egui_winit::State::new(
-            egui_ctx.clone(),
-            egui::ViewportId::ROOT,
-            &window,
-            None,
-            None,
-            None, // Added missing parameter
-        );
-
         // Fixed: Use compatible wgpu device and add missing 5th parameter
-        
-
-let surface_format = wgpu::TextureFormat::Bgra8UnormSrgb;
-let output_color_format = surface_format;
-let output_depth_format = None;
-let msaa_samples = 1;
-
-let egui_renderer = EguiRenderer::new(
-    &device,
-    output_color_format,
-    output_depth_format,
-    msaa_samples,
-    &window
-);
-
-
 
         let mut state = State {
             window,
@@ -157,9 +124,6 @@ let egui_renderer = EguiRenderer::new(
             uniform_buffer,
             uniform_buffer_size,
             staging_belt,
-            egui_ctx,
-            egui_winit,
-            egui_renderer,
         };
 
         state.load_default_meshes();
@@ -185,13 +149,31 @@ let egui_renderer = EguiRenderer::new(
         })
     }
 
-
-
-pub fn staging_belt(&mut self) -> &mut wgpu::util::StagingBelt {
+    pub fn staging_belt(&mut self) -> &mut wgpu::util::StagingBelt {
         &mut self.staging_belt
     }
-
-
+ // Add these getter methods to your State implementation
+    pub fn get_device(&self) -> &wgpu::Device {
+        &self.device
+    }
+    
+    pub fn get_queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+    
+    pub fn get_surface(&self) -> &wgpu::Surface {
+        &self.surface
+    }
+    
+    pub fn get_surface_format(&self) -> wgpu::TextureFormat {
+        // Return your surface format - you'll need to store this in your State struct
+        // For example: wgpu::TextureFormat::Bgra8UnormSrgb
+        self.config.format // assuming you have a config field
+    }
+    
+    pub fn get_window(&self) -> &winit::window::Window {
+        &self.window // assuming you store the window reference
+    }
     fn create_entity_pipeline(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -423,25 +405,35 @@ pub fn staging_belt(&mut self) -> &mut wgpu::util::StagingBelt {
             });
 
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Clear Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &texture_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: clear_color[0] as f64,
-                            g: clear_color[1] as f64,
-                            b: clear_color[2] as f64,
-                            a: clear_color[3] as f64,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+          
+let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+    label: Some("Clear Pass"),
+    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+        view: &texture_view,
+        resolve_target: None,
+        ops: wgpu::Operations {
+            load: wgpu::LoadOp::Clear(wgpu::Color {
+                r: clear_color[0] as f64,
+                g: clear_color[1] as f64,
+                b: clear_color[2] as f64,
+                a: clear_color[3] as f64,
+            }),
+            store: wgpu::StoreOp::Store,
+        },
+    })],
+
+depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+    view: &depth_texture_view,
+    depth_ops: Some(wgpu::Operations {
+        load: wgpu::LoadOp::Clear(1.0),
+        store: wgpu::StoreOp::Store,
+    }),
+    stencil_ops: None,
+}),
+    timestamp_writes: None,
+    occlusion_query_set: None,
+});
+
         }
 
         self.queue.submit([encoder.finish()]);

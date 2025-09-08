@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::Path;
-use crate::modules::app::*;
 
 pub fn find_projects(paths: Vec<String>) -> Vec<String> {
     let mut valid_projects = Vec::new();
@@ -38,17 +37,14 @@ pub fn render_hub(ctx: &egui::Context) {
         ui.heading("Projects");
         ui.separator();
         
-        // Fix: iterate over reference to avoid moving
         for project in &projects {
             ui.horizontal(|ui| {
-                // Extract just the project name from the full path
                 let project_name = Path::new(project)
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("Unknown Project");
                 
                 if ui.button(project_name).clicked() {
-                    // Handle project selection here
                     println!("Selected project: {}", project);
                 }
                 

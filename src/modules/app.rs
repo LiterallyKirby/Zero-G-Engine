@@ -2,36 +2,42 @@ use crate::modules::ecs::entity::*;
 use crate::modules::ecs::scripts::ScriptRegistry;
 use crate::modules::ecs::systems::*;
 use crate::modules::ecs::world::World;
-use crate::modules::egui_renderer::*;
 use crate::modules::state::State;
-use crate::modules::ui::hub::*;
-use glam::{Vec3, Vec4}; // Keep these imports - they're used in create_default_scene
+use crate::modules::ui::gui::*;
+use glam::{Vec3, Vec4};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use egui_winit::pixels_per_point;
 use winit::{
     application::ApplicationHandler,
-    event::{KeyEvent, WindowEvent}, // Fixed import
+    event::{KeyEvent, WindowEvent},
     event_loop::ActiveEventLoop,
     window::{Window, WindowId},
 };
+
 pub type ProjectId = u32;
 
-use wgpu::util::StagingBelt;
+#[derive(Clone, Debug)]
+pub enum HubAction {
+    NewProject,
+    LoadProject(ProjectId),
+    None,
+}
+
 #[derive(Clone, Debug)]
 enum AppState {
     Hub,
     Editor { project_id: ProjectId },
     PlayTest { project_id: ProjectId },
 }
-#[derive()]
+
 pub struct App {
     app_state: AppState,
     egui_enabled: bool,
     gpu_state: Option<State>,
     world: Option<World>,
-    script_registry: ScriptRegistry, // ✅ FIXED: This was missing!
+    script_registry: ScriptRegistry,
     last_frame_time: Option<Instant>,
+    gui: Option<Gui>,
 }
 
 impl Default for App {
@@ -41,8 +47,9 @@ impl Default for App {
             egui_enabled: true,
             gpu_state: None,
             world: None,
-            script_registry: ScriptRegistry::new(), // ✅ FIXED: Initialize it
+            script_registry: ScriptRegistry::new(),
             last_frame_time: None,
+            gui: None,
         }
     }
 }
@@ -56,7 +63,16 @@ impl ApplicationHandler for App {
         );
 
         let gpu_state = pollster::block_on(State::new(window.clone()));
+        
+        // Initialize GUI with proper parameters
+        let gui = Gui::new(
+            gpu_state.get_device(),
+            gpu_state.get_surface_format(),
+            &window
+        );
+        
         self.gpu_state = Some(gpu_state);
+        self.gui = Some(gui);
 
         match &self.app_state {
             AppState::Hub => {
@@ -74,12 +90,19 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        // Fixed: Separate the mutable borrow and method call to avoid double mutable borrow
+        // First, let egui handle it
+        if let (Some(gui), Some(gpu_state)) = (&mut self.gui, &self.gpu_state) {
+            let consumed = gui.on_event(&gpu_state.get_window(), &event); 
+            if consumed {
+                // egui handled it, don't pass down
+                return;
+            }
+        }
+
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => {
                 self.update_and_render();
-                // Fixed: Get window reference separately to avoid borrowing conflicts
                 if let Some(gpu_state) = &self.gpu_state {
                     gpu_state.get_window().request_redraw();
                 }
@@ -90,7 +113,6 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                // ✅ FIXED: Proper winit event handling
                 if event.state == winit::event::ElementState::Pressed {
                     match event.physical_key {
                         winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::F5) => {
@@ -122,7 +144,7 @@ impl ApplicationHandler for App {
 impl App {
     fn initialize_hub(&mut self) {
         self.egui_enabled = true;
-        // TODO: Initialize hub UI state
+        self.world = None; // Clear world for hub
         println!("Initialized Hub");
     }
 
@@ -134,15 +156,12 @@ impl App {
 
     fn initialize_playtest(&mut self, project_id: ProjectId) {
         self.egui_enabled = false;
-        // World should already exist from editor, just disable UI
         println!("Started playtest for project {}", project_id);
     }
 
     fn create_default_scene(&mut self) {
-        // Create world and spawn default entities (your existing code)
         let mut world = World::new();
 
-        // Cube - Fixed: Prefix with underscore to indicate intentionally unused
         let _cube_id = Entity::builder_with_world(
             &mut world,
             "Cube1",
@@ -155,7 +174,6 @@ impl App {
         .with_tag("player")
         .build();
 
-        // Camera
         let cam_id = spawn_camera(
             &mut world,
             "MainCamera",
@@ -167,7 +185,6 @@ impl App {
         );
         set_active_camera(&mut world, cam_id);
 
-        // Initialize scripts
         if let Err(e) = init_scripts(&mut world, &mut self.script_registry) {
             eprintln!("Failed to initialize scripts: {}", e);
         }
@@ -202,61 +219,235 @@ impl App {
         }
     }
 
-   
-fn render_hub_ui(&mut self) {
-    if let Some(gpu_state) = &mut self.gpu_state {
-       
-let window_ref = gpu_state.get_window(); // immutable borrow
-gpu_state.egui_renderer.begin_frame(window_ref);
-
-
-        // Draw UI
-        render_hub(gpu_state.egui_renderer.context());
-
-        // Get next frame from the swap chain
-        let frame = gpu_state.surface.get_current_texture().unwrap();
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        // Create command encoder
-        let mut encoder = gpu_state.device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor { label: Some("egui encoder") }
-        );
-
-       
-let window_ref = gpu_state.get_window(); // separate immutable borrow
-let mut staging_belt = gpu_state.staging_belt(); // mutable borrow stored locally
-
-gpu_state.egui_renderer.end_frame_and_draw(
-    &gpu_state.device,
-    &gpu_state.queue,
-    &mut encoder,
-    window_ref,
-    &target_view,
-    pixels_per_point,
-    size_in_pixels,
-    &mut staging_belt,
-);
-
-
-        // Submit commands
-        gpu_state.queue.submit(Some(encoder.finish()));
-        frame.present();
+    fn show_hub_menu(&mut self, ctx: &egui::Context) -> HubAction {
+        let mut action = HubAction::None;
+        
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("ZeroGPU Engine Hub");
+            ui.separator();
+            
+            ui.vertical_centered(|ui| {
+                if ui.add_sized([200.0, 50.0], egui::Button::new("New Project")).clicked() {
+                    action = HubAction::NewProject;
+                }
+                
+                ui.add_space(10.0);
+                
+                if ui.add_sized([200.0, 50.0], egui::Button::new("Load Project")).clicked() {
+                    action = HubAction::LoadProject(1); // For now, hardcode project ID
+                }
+                
+                ui.add_space(10.0);
+                
+                ui.label("Recent Projects:");
+                // Add list of recent projects here
+            });
+        });
+        
+        action
     }
-}
 
+    fn show_editor_interface(&mut self, ctx: &egui::Context, _world: &mut World) {
+        // Top menu bar
+        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("New Scene").clicked() {
+                        // Handle new scene
+                    }
+                    if ui.button("Save").clicked() {
+                        // Handle save
+                    }
+                    if ui.button("Load").clicked() {
+                        // Handle load
+                    }
+                });
+                
+                ui.menu_button("Edit", |ui| {
+                    if ui.button("Undo").clicked() {
+                        // Handle undo
+                    }
+                    if ui.button("Redo").clicked() {
+                        // Handle redo
+                    }
+                });
+                
+                ui.separator();
+                ui.label("Editor Mode");
+                
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("▶ Play (F5)").clicked() {
+                        // Will be handled by the return value
+                    }
+                });
+            });
+        });
+
+        // Left panel - Scene hierarchy
+        egui::SidePanel::left("hierarchy").show(ctx, |ui| {
+            ui.heading("Scene Hierarchy");
+            ui.separator();
+            
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.collapsing("Scene", |ui| {
+                    ui.selectable_label(false, "Main Camera");
+                    ui.selectable_label(false, "Cube1");
+                });
+            });
+        });
+
+        // Right panel - Inspector
+        egui::SidePanel::right("inspector").show(ctx, |ui| {
+            ui.heading("Inspector");
+            ui.separator();
+            
+            ui.label("Transform");
+            ui.horizontal(|ui| {
+                ui.label("Position:");
+                ui.add(egui::DragValue::new(&mut 0.0f32).prefix("X: "));
+                ui.add(egui::DragValue::new(&mut 0.0f32).prefix("Y: "));
+                ui.add(egui::DragValue::new(&mut 0.0f32).prefix("Z: "));
+            });
+        });
+
+        // Bottom panel - Console/logs
+        egui::TopBottomPanel::bottom("console").show(ctx, |ui| {
+            ui.heading("Console");
+            ui.separator();
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.label("Engine initialized successfully");
+                ui.label("Scene loaded");
+            });
+        });
+    }
+
+    fn render_hub_ui(&mut self) {
+        if let (Some(gpu_state), Some(gui)) = (&mut self.gpu_state, &mut self.gui) {
+            let window = gpu_state.get_window();
+            let size = window.inner_size();
+            
+            // Prepare GUI frame
+            let mut encoder = gpu_state.get_device().create_command_encoder(
+                &wgpu::CommandEncoderDescriptor {
+                    label: Some("GUI Command Encoder"),
+                }
+            );
+            
+            let paint_jobs = gui.prepare(
+                gpu_state.get_device(),
+                gpu_state.get_queue(),
+                &window,
+                &mut encoder,
+                (size.width, size.height),
+            );
+            
+            // Show hub menu
+            let hub_result = self.show_hub_menu(&gui.egui_ctx);
+            
+            match hub_result {
+                HubAction::NewProject => {
+                    self.create_new_project();
+                }
+                HubAction::LoadProject(project_id) => {
+                    self.load_project(project_id);
+                }
+                HubAction::None => {}
+            }
+            
+            // Render everything
+            if let Ok(surface_texture) = gpu_state.get_surface().get_current_texture() {
+                let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                
+                {
+                    let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("GUI Render Pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+                    
+                    let screen_descriptor = egui_wgpu::ScreenDescriptor {
+                        size_in_pixels: [size.width, size.height],
+                        pixels_per_point: 1.0,
+                    };
+                    
+                    gui.render(&mut rpass, &paint_jobs, &screen_descriptor);
+                }
+                
+                gpu_state.get_queue().submit(std::iter::once(encoder.finish()));
+                surface_texture.present();
+            }
+        }
+    }
 
     fn render_editor_ui(&mut self) {
-        // TODO: Render editor UI with egui
-        // This would include your inspector, hierarchy, viewport, etc.
-        if let Some(gpu_state) = &mut self.gpu_state {
-            if let Some(world) = &mut self.world {
-                // Render the game in the editor viewport
-                if let Err(e) = update_and_render(world, gpu_state, &mut self.script_registry, 0.0)
-                {
-                    eprintln!("Editor render error: {}", e);
+        if let (Some(gpu_state), Some(gui), Some(world)) = 
+            (&mut self.gpu_state, &mut self.gui, &mut self.world) {
+            
+            let window = gpu_state.get_window();
+            let size = window.inner_size();
+            
+            // Prepare GUI frame
+            let mut encoder = gpu_state.get_device().create_command_encoder(
+                &wgpu::CommandEncoderDescriptor {
+                    label: Some("Editor Command Encoder"),
                 }
+            );
+            
+            let paint_jobs = gui.prepare(
+                gpu_state.get_device(),
+                gpu_state.get_queue(),
+                &window,
+                &mut encoder,
+                (size.width, size.height),
+            );
+            
+            // Show editor interface
+            self.show_editor_interface(&gui.egui_ctx, world);
+            
+            // Render 3D scene first, then GUI
+            if let Err(e) = update_and_render(world, gpu_state, &mut self.script_registry, 0.0) {
+                eprintln!("Editor 3D render error: {}", e);
+            }
+            
+            // Then render GUI overlay
+            if let Ok(surface_texture) = gpu_state.get_surface().get_current_texture() {
+                let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                
+                {
+                    let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("Editor GUI Render Pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load, // Don't clear, draw over 3D scene
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+                    
+                    let screen_descriptor = egui_wgpu::ScreenDescriptor {
+                        size_in_pixels: [size.width, size.height],
+                        pixels_per_point: 1.0,
+                    };
+                    
+                    gui.render(&mut rpass, &paint_jobs, &screen_descriptor);
+                }
+                
+                gpu_state.get_queue().submit(std::iter::once(encoder.finish()));
+                surface_texture.present();
             }
         }
     }
@@ -264,8 +455,7 @@ gpu_state.egui_renderer.end_frame_and_draw(
     fn render_game_only(&mut self) {
         if let Some(gpu_state) = &mut self.gpu_state {
             if let Some(world) = &mut self.world {
-                if let Err(e) = update_and_render(world, gpu_state, &mut self.script_registry, 0.0)
-                {
+                if let Err(e) = update_and_render(world, gpu_state, &mut self.script_registry, 0.0) {
                     eprintln!("Game render error: {}", e);
                 }
             }
@@ -275,9 +465,7 @@ gpu_state.egui_renderer.end_frame_and_draw(
     fn update_game_logic(&mut self, delta_time: f32) {
         if let Some(gpu_state) = &mut self.gpu_state {
             if let Some(world) = &mut self.world {
-                if let Err(e) =
-                    update_and_render(world, gpu_state, &mut self.script_registry, delta_time)
-                {
+                if let Err(e) = update_and_render(world, gpu_state, &mut self.script_registry, delta_time) {
                     eprintln!("Game update error: {}", e);
                 }
             }
@@ -285,7 +473,7 @@ gpu_state.egui_renderer.end_frame_and_draw(
     }
 
     fn handle_game_input(&mut self, _event: &KeyEvent) {
-        // Handle game-specific input
+        // Handle game-specific input when not in GUI mode
     }
 
     // State transition methods
@@ -306,14 +494,13 @@ gpu_state.egui_renderer.end_frame_and_draw(
 
     // Helper method for creating new projects from hub
     pub fn create_new_project(&mut self) -> ProjectId {
-        let new_project_id = 1; // You'd generate this properly
+        let new_project_id = 1; // You might want to generate this properly
         self.transition_to_editor(new_project_id);
         new_project_id
     }
 
     // Helper method for loading existing projects from hub
     pub fn load_project(&mut self, project_id: ProjectId) {
-        // Load project data from file
         self.transition_to_editor(project_id);
     }
 }
