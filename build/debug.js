@@ -3,6 +3,11 @@ async function instantiate(module, imports = {}) {
   const __module0 = imports.context;
   const adaptedImports = {
     env: Object.setPrototypeOf({
+      "console.log"(text) {
+        // ~lib/bindings/dom/console.log(~lib/string/String) => void
+        text = __liftString(text >>> 0);
+        console.log(text);
+      },
       abort(message, fileName, lineNumber, columnNumber) {
         // ~lib/builtins/abort(~lib/string/String | null?, ~lib/string/String | null?, u32?, u32?) => void
         message = __liftString(message >>> 0);
@@ -16,15 +21,95 @@ async function instantiate(module, imports = {}) {
       },
     }, Object.assign(Object.create(globalThis), imports.env || {})),
     context: Object.setPrototypeOf({
+      get_entity_position_x(id) {
+        // assembly/context/get_entity_position_x(u32) => f32
+        id = id >>> 0;
+        return __module0.get_entity_position_x(id);
+      },
       set_entity_position_x(id, val) {
         // assembly/context/set_entity_position_x(u32, f32) => void
         id = id >>> 0;
         __module0.set_entity_position_x(id, val);
       },
-      get_entity_position_x(id) {
-        // assembly/context/get_entity_position_x(u32) => f32
+      get_entity_position_y(id) {
+        // assembly/context/get_entity_position_y(u32) => f32
         id = id >>> 0;
-        return __module0.get_entity_position_x(id);
+        return __module0.get_entity_position_y(id);
+      },
+      set_entity_position_y(id, val) {
+        // assembly/context/set_entity_position_y(u32, f32) => void
+        id = id >>> 0;
+        __module0.set_entity_position_y(id, val);
+      },
+      get_entity_position_z(id) {
+        // assembly/context/get_entity_position_z(u32) => f32
+        id = id >>> 0;
+        return __module0.get_entity_position_z(id);
+      },
+      set_entity_position_z(id, val) {
+        // assembly/context/set_entity_position_z(u32, f32) => void
+        id = id >>> 0;
+        __module0.set_entity_position_z(id, val);
+      },
+      get_entity_rotation_x(id) {
+        // assembly/context/get_entity_rotation_x(u32) => f32
+        id = id >>> 0;
+        return __module0.get_entity_rotation_x(id);
+      },
+      set_entity_rotation_x(id, val) {
+        // assembly/context/set_entity_rotation_x(u32, f32) => void
+        id = id >>> 0;
+        __module0.set_entity_rotation_x(id, val);
+      },
+      get_entity_rotation_y(id) {
+        // assembly/context/get_entity_rotation_y(u32) => f32
+        id = id >>> 0;
+        return __module0.get_entity_rotation_y(id);
+      },
+      set_entity_rotation_y(id, val) {
+        // assembly/context/set_entity_rotation_y(u32, f32) => void
+        id = id >>> 0;
+        __module0.set_entity_rotation_y(id, val);
+      },
+      get_entity_rotation_z(id) {
+        // assembly/context/get_entity_rotation_z(u32) => f32
+        id = id >>> 0;
+        return __module0.get_entity_rotation_z(id);
+      },
+      set_entity_rotation_z(id, val) {
+        // assembly/context/set_entity_rotation_z(u32, f32) => void
+        id = id >>> 0;
+        __module0.set_entity_rotation_z(id, val);
+      },
+      get_entity_scale_x(id) {
+        // assembly/context/get_entity_scale_x(u32) => f32
+        id = id >>> 0;
+        return __module0.get_entity_scale_x(id);
+      },
+      set_entity_scale_x(id, val) {
+        // assembly/context/set_entity_scale_x(u32, f32) => void
+        id = id >>> 0;
+        __module0.set_entity_scale_x(id, val);
+      },
+      get_entity_scale_y(id) {
+        // assembly/context/get_entity_scale_y(u32) => f32
+        id = id >>> 0;
+        return __module0.get_entity_scale_y(id);
+      },
+      set_entity_scale_y(id, val) {
+        // assembly/context/set_entity_scale_y(u32, f32) => void
+        id = id >>> 0;
+        __module0.set_entity_scale_y(id, val);
+      },
+      get_entity_scale_z(id) {
+        // assembly/context/get_entity_scale_z(u32) => f32
+        id = id >>> 0;
+        return __module0.get_entity_scale_z(id);
+      },
+      set_entity_scale_z(id, val) {
+        // assembly/context/set_entity_scale_z(u32, f32) => void
+        id = id >>> 0;
+        __module0.set_entity_scale_z(id, val);
       },
     }, __module0),
   };

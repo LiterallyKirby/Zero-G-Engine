@@ -2,6 +2,7 @@ use crate::modules::ecs::components::*;
 use crate::modules::ecs::scripts::*;
 use crate::modules::ecs::world::*;
 use glam::*;
+
 // ============================================================================
 // CORE TYPES AND STRUCTS
 // ============================================================================
@@ -19,7 +20,7 @@ pub struct Entity {
     pub mesh_handle: Option<MeshHandle>,
     pub material: Option<Material>,
     pub camera: Option<Camera>,
-    pub scripts: Option<Vec<Script>>, // Changed from `script` to `scripts`
+    pub scripts: Option<Vec<Script>>,
     pub children: Option<Vec<EntityId>>,
     pub parent: Option<EntityId>,
     pub tags: Vec<String>,
@@ -42,16 +43,15 @@ pub struct EntityBuilder {
 pub enum MeshType {
     Triangle,
     Cube,
-    Custom(u32), // let the user pass a GPU mesh ID directly
+    Custom(u32), // Let the user pass a GPU mesh ID directly
 }
 
 // ============================================================================
-// ENTITY IMPLEMENTATION
+// ENTITY BUILDER IMPLEMENTATION
 // ============================================================================
 
 impl EntityBuilder {
     /// Create a new EntityBuilder with all the basic components
-
     pub fn new(
         world: &mut World,
         name: impl Into<String>,
@@ -75,21 +75,17 @@ impl EntityBuilder {
                 rotation: Vec3::ZERO,
                 scale,
             }),
-            mesh_handle: Some(MeshHandle(match mesh {
-                MeshType::Triangle => 0,
-                MeshType::Cube => 1,
-                MeshType::Custom(id) => id,
-            })),
+            mesh_handle: Some(MeshHandle(Self::mesh_type_to_id(mesh))),
             material: Some(Material { color }),
             camera: None,
-            scripts, // could be None
+            scripts,
             children: None,
             parent: None,
             tags: vec![],
         }
     }
 
-    /// Add additional scripts to the entity
+    /// Add additional script to the entity
     pub fn with_script(mut self, script_path: impl Into<String>) -> Self {
         let script = Script::new(script_path.into());
         match &mut self.scripts {
@@ -156,7 +152,20 @@ impl EntityBuilder {
 
         entity_id
     }
+
+    /// Convert MeshType enum to mesh ID
+    fn mesh_type_to_id(mesh: MeshType) -> u32 {
+        match mesh {
+            MeshType::Triangle => 0,
+            MeshType::Cube => 1,
+            MeshType::Custom(id) => id,
+        }
+    }
 }
+
+// ============================================================================
+// ENTITY IMPLEMENTATION
+// ============================================================================
 
 impl Entity {
     pub fn new(name: impl Into<String>) -> Self {
@@ -191,7 +200,6 @@ impl Entity {
     }
 
     /// Create an EntityBuilder that integrates with the world (this is what you want)
-
     pub fn builder_with_world(
         world: &mut World,
         name: impl Into<String>,
@@ -213,11 +221,7 @@ impl Entity {
                 rotation: Vec3::ZERO,
                 scale,
             }),
-            mesh_handle: Some(MeshHandle(match mesh {
-                MeshType::Triangle => 0,
-                MeshType::Cube => 1,
-                MeshType::Custom(id) => id,
-            })),
+            mesh_handle: Some(MeshHandle(EntityBuilder::mesh_type_to_id(mesh))),
             material: Some(Material { color }),
             camera: None,
             scripts: None,
@@ -233,6 +237,7 @@ impl Entity {
         builder
     }
 
+    // Component setters
     pub fn set_name(&mut self, name: impl Into<String>) {
         self.name = name.into();
     }
@@ -245,22 +250,23 @@ impl Entity {
         self.parent = Some(parent);
     }
 
-    pub fn add_children(&mut self, child: EntityId) {
+    pub fn add_child(&mut self, child: EntityId) {
         self.children.get_or_insert_with(Vec::new).push(child);
     }
 
-    pub fn add_transform(&mut self, t: Transform) {
-        self.transform = Some(t);
+    pub fn add_transform(&mut self, transform: Transform) {
+        self.transform = Some(transform);
     }
 
-    pub fn add_mesh_handle(&mut self, m: MeshHandle) {
-        self.mesh_handle = Some(m);
+    pub fn add_mesh_handle(&mut self, mesh_handle: MeshHandle) {
+        self.mesh_handle = Some(mesh_handle);
     }
 
-    pub fn add_material(&mut self, mat: Material) {
-        self.material = Some(mat);
+    pub fn add_material(&mut self, material: Material) {
+        self.material = Some(material);
     }
 
+    // Tag management
     pub fn has_tag(&self, tag: &str) -> bool {
         self.tags.contains(&tag.to_string())
     }
@@ -269,7 +275,7 @@ impl Entity {
         self.tags.retain(|t| t != tag);
     }
 
-    // Script management methods (from your sc
+   
 }
 
 // ============================================================================
@@ -279,49 +285,35 @@ impl Entity {
 pub fn spawn_entity(
     world: &mut World,
     name: impl Into<String>,
-    position: glam::Vec3,
-    scale: glam::Vec3,
+    position: Vec3,
+    scale: Vec3,
     mesh: MeshType,
-    color: glam::Vec4,
+    color: Vec4,
 ) -> EntityId {
-    // Create entity through World to get unique ID
     let entity_id = world.create_entity(name);
 
-    // Add transform
     if let Some(entity) = world.get_entity_mut(entity_id) {
         entity.add_transform(Transform {
             position,
-            rotation: glam::Vec3 {
-                x: (0.0),
-                y: (0.0),
-                z: (0.0),
-            },
+            rotation: Vec3::ZERO,
             scale,
         });
 
-        // Pick mesh ID from enum
-        let mesh_id = match mesh {
-            MeshType::Triangle => 0,
-            MeshType::Cube => 1,
-            MeshType::Custom(id) => id,
-        };
+        let mesh_id = EntityBuilder::mesh_type_to_id(mesh);
         entity.add_mesh_handle(MeshHandle(mesh_id));
-
-        // Add material
         entity.add_material(Material { color });
     }
 
     entity_id
 }
 
-// Spawning functions for scripted entities
 pub fn spawn_scripted_entity(
     world: &mut World,
     name: impl Into<String>,
-    position: glam::Vec3,
-    scale: glam::Vec3,
+    position: Vec3,
+    scale: Vec3,
     mesh: MeshType,
-    color: glam::Vec4,
+    color: Vec4,
     script_paths: Vec<String>,
 ) -> EntityId {
     let entity_id = spawn_entity(world, name, position, scale, mesh, color);
@@ -329,7 +321,7 @@ pub fn spawn_scripted_entity(
     if let Some(entity) = world.get_entity_mut(entity_id) {
         let scripts: Vec<Script> = script_paths
             .into_iter()
-            .map(|path| Script::new(path))
+            .map(Script::new)
             .collect();
         entity.add_scripts(scripts);
     }
@@ -340,10 +332,10 @@ pub fn spawn_scripted_entity(
 pub fn spawn_single_script_entity(
     world: &mut World,
     name: impl Into<String>,
-    position: glam::Vec3,
-    scale: glam::Vec3,
+    position: Vec3,
+    scale: Vec3,
     mesh: MeshType,
-    color: glam::Vec4,
+    color: Vec4,
     script_path: impl Into<String>,
 ) -> EntityId {
     spawn_scripted_entity(
@@ -360,8 +352,8 @@ pub fn spawn_single_script_entity(
 pub fn spawn_camera(
     world: &mut World,
     name: impl Into<String>,
-    position: glam::Vec3,
-    rotation: glam::Vec3,
+    position: Vec3,
+    rotation: Vec3,
     fov_y: f32,
     near: f32,
     far: f32,
@@ -372,18 +364,14 @@ pub fn spawn_camera(
         entity.add_transform(Transform {
             position,
             rotation,
-            scale: glam::Vec3 {
-                x: (0.0),
-                y: (0.0),
-                z: (0.0),
-            },
+            scale: Vec3::ZERO,
         });
 
         entity.add_camera(Camera {
-            fov: fov_y, // <-- match struct field name
+            fov: fov_y,
             near,
             far,
-            is_active: true, // maybe default the first one to active
+            is_active: true, // Default the first one to active
         });
     }
 
@@ -402,27 +390,26 @@ pub fn set_active_camera(world: &mut World, id: EntityId) {
     }
 }
 
-pub fn camera_view_proj(camera: &Camera, transform: &Transform, aspect_ratio: f32) -> glam::Mat4 {
-    // Convert position and rotation to glam types
-    let eye = transform.position; // assuming you've changed position to glam::Vec3
-    let rotation = glam::Quat::from_euler(
-        glam::EulerRot::XYZ,
+pub fn camera_view_proj(camera: &Camera, transform: &Transform, aspect_ratio: f32) -> Mat4 {
+    let eye = transform.position;
+    let rotation = Quat::from_euler(
+        EulerRot::XYZ,
         transform.rotation.x,
         transform.rotation.y,
         transform.rotation.z,
     );
 
-    // Forward direction
-    let forward = rotation * -glam::Vec3::Z; // -Z is forward in right-handed system
+    // Forward direction (-Z is forward in right-handed system)
+    let forward = rotation * -Vec3::Z;
     let target = eye + forward;
-    let up = rotation * glam::Vec3::Y; // Rotate up vector by the same rotation
+    let up = rotation * Vec3::Y;
 
     // View matrix
-    let view = glam::Mat4::look_at_rh(eye, target, up);
+    let view = Mat4::look_at_rh(eye, target, up);
 
     // Projection matrix (perspective)
-    let proj = glam::Mat4::perspective_rh_gl(
-        camera.fov.to_radians(), // vertical FOV
+    let proj = Mat4::perspective_rh_gl(
+        camera.fov.to_radians(),
         aspect_ratio,
         camera.near,
         camera.far,
@@ -435,15 +422,15 @@ pub fn camera_view_proj(camera: &Camera, transform: &Transform, aspect_ratio: f3
 // UTILITY FUNCTIONS
 // ============================================================================
 
-fn rotation_to_forward(euler: [f32; 3]) -> glam::Vec3 {
+fn rotation_to_forward(euler: [f32; 3]) -> Vec3 {
     // Convert Euler (pitch, yaw, roll) into a quaternion
-    let rot = glam::Quat::from_euler(
-        glam::EulerRot::XYZ,
+    let rot = Quat::from_euler(
+        EulerRot::XYZ,
         euler[0].to_radians(), // pitch
         euler[1].to_radians(), // yaw
         euler[2].to_radians(), // roll
     );
 
-    // Apply quaternion to "forward" (Z axis in most engines)
-    rot * glam::Vec3::Z
+    // Apply quaternion to "forward" (Z axis)
+    rot * Vec3::Z
 }

@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use wgpu::util::DeviceExt;
-use winit::window::Window;
 
+// Instead of: use wgpu;
+use egui_wgpu::wgpu;
+use winit::window::Window;
+use crate::modules::egui_renderer::*;
+use egui_wgpu::wgpu::util::DeviceExt;
 // ============================================================================
 // CORE DATA STRUCTURES
 // ============================================================================
@@ -40,9 +43,9 @@ pub struct State {
     window: Arc<Window>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    size: winit::dpi::PhysicalSize<u32>,
+    pub size: winit::dpi::PhysicalSize<u32>,  // Make this public
     pub surface: wgpu::Surface<'static>,
-    surface_format: wgpu::TextureFormat,
+    pub surface_format: wgpu::TextureFormat,  // Make this public
     pub entity_pipeline: wgpu::RenderPipeline,
     pub uniform_bind_group_layout: wgpu::BindGroupLayout,
     pub meshes: HashMap<u32, Mesh>,
@@ -51,6 +54,9 @@ pub struct State {
     uniform_buffer: wgpu::Buffer,
     uniform_buffer_size: u64,
     staging_belt: wgpu::util::StagingBelt,
+    pub egui_ctx: egui::Context,
+    pub egui_winit: egui_winit::State,  // Make this public
+    pub egui_renderer: EguiRenderer,  // Make this public
 }
 
 // ============================================================================
@@ -58,20 +64,38 @@ pub struct State {
 // ============================================================================
 impl State {
     pub async fn new(window: Arc<Window>) -> State {
-        // GPU setup
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        // GPU setup - Fixed: Remove reference
+       
+let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions::default())
             .await
             .unwrap();
+
+        // Fixed: Add None parameter for request_device
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default())
+            
+.request_device(&wgpu::DeviceDescriptor::default())
             .await
             .unwrap();
+
         let size = window.inner_size();
         let surface = instance.create_surface(window.clone()).unwrap();
         let cap = surface.get_capabilities(&adapter);
         let surface_format = cap.formats[0];
+
+        // Configure surface early to get the config
+        let surface_config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface_format,
+            view_formats: vec![surface_format.add_srgb_suffix()],
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            width: size.width,
+            height: size.height,
+            desired_maximum_frame_latency: 2,
+            present_mode: wgpu::PresentMode::AutoVsync,
+        };
+        surface.configure(&device, &surface_config);
 
         // Bind group layout
         let uniform_bind_group_layout = Self::create_uniform_bind_group_layout(&device);
@@ -90,6 +114,36 @@ impl State {
             mapped_at_creation: false,
         });
 
+        let egui_ctx = egui::Context::default();
+
+        // Fixed: Add missing 6th parameter for egui_winit::State::new
+        let egui_winit = egui_winit::State::new(
+            egui_ctx.clone(),
+            egui::ViewportId::ROOT,
+            &window,
+            None,
+            None,
+            None, // Added missing parameter
+        );
+
+        // Fixed: Use compatible wgpu device and add missing 5th parameter
+        
+
+let surface_format = wgpu::TextureFormat::Bgra8UnormSrgb;
+let output_color_format = surface_format;
+let output_depth_format = None;
+let msaa_samples = 1;
+
+let egui_renderer = EguiRenderer::new(
+    &device,
+    output_color_format,
+    output_depth_format,
+    msaa_samples,
+    &window
+);
+
+
+
         let mut state = State {
             window,
             device,
@@ -103,9 +157,11 @@ impl State {
             uniform_buffer,
             uniform_buffer_size,
             staging_belt,
+            egui_ctx,
+            egui_winit,
+            egui_renderer,
         };
 
-        state.configure_surface();
         state.load_default_meshes();
         state
     }
@@ -128,6 +184,13 @@ impl State {
             label: Some("entity_uniform_bind_group_layout"),
         })
     }
+
+
+
+pub fn staging_belt(&mut self) -> &mut wgpu::util::StagingBelt {
+        &mut self.staging_belt
+    }
+
 
     fn create_entity_pipeline(
         device: &wgpu::Device,
@@ -338,6 +401,56 @@ impl State {
     // ============================================================================
     // OPTIMIZED RENDERING
     // ============================================================================
+
+    // Fixed: Added the missing render_with_clear_color method
+    pub fn render_with_clear_color(
+        &mut self,
+        clear_color: [f32; 4],
+    ) -> Result<(), wgpu::SurfaceError> {
+        let surface_texture = self.surface.get_current_texture()?;
+
+        let texture_view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor {
+                format: Some(self.surface_format.add_srgb_suffix()),
+                ..Default::default()
+            });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+
+        {
+            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Clear Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &texture_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: clear_color[0] as f64,
+                            g: clear_color[1] as f64,
+                            b: clear_color[2] as f64,
+                            a: clear_color[3] as f64,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+        }
+
+        self.queue.submit([encoder.finish()]);
+        self.window.pre_present_notify();
+        surface_texture.present();
+
+        Ok(())
+    }
+
     pub fn render(&mut self, world: &crate::modules::ecs::world::World) {
         let surface_texture = match self.surface.get_current_texture() {
             Ok(texture) => texture,
@@ -378,7 +491,6 @@ impl State {
                 label: Some("ECS Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &texture_view,
-                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
